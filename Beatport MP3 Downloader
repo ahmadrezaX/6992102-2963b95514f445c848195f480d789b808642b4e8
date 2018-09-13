@@ -1,0 +1,85 @@
+#!/usr/bin/php
+<?php
+
+/**
+ * Thank you, Beatport for having hardcoded JSON data right on your beats pages...
+ * will expand further on this script at a later point in time..
+ * For educational purposes only, please support your artists.
+ * 
+ * @author  Steve Birstok <steve@stevebirstok.com>
+ *
+ */
+
+if (function_exists('apc_fetch')) {
+  define('CAN_CACHE', true);
+} else {
+	define('CAN_CACHE', false);
+}
+
+function _curl ($url, $download_filename=false)
+{
+	$cache_name = 'beatport_hack#_curl('.sha1($url).')';
+	if (CAN_CACHE) {
+		$val = apc_fetch($cache_name);
+		if ($val) {
+			return $val;
+		}
+	}
+
+	$ch = curl_init();
+	curl_setopt($ch, CURLOPT_URL, $url);
+	if ($download_filename) {
+		$fh = fopen($download_filename, 'w');
+		curl_setopt($ch, CURLOPT_FILE, $fh);
+		curl_exec($ch);
+		fflush($fh);
+		fclose($fh);
+		curl_close($ch);
+	} else {
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		$content = curl_exec($ch);
+		curl_close($ch);
+
+		if (CAN_CACHE) {
+			apc_store($cache_name, $content);
+		}
+
+		return $content;
+	}
+
+	return false;
+}
+
+if (count($argv) > 1) {
+	$new_url = parse_url($argv[1]);
+	if (isset($new_url['scheme'])) {
+		$url = $argv[1];
+	}
+}
+
+if (!isset($url)) {
+	echo "Example Usage:\n".
+		"\t".$argv[0]." http://sounds.beatport.com/pack/slo-mo-house/6853\n\n";
+	die("Sorry, No URL was provided.\n");
+}
+
+$content = _curl($url);
+
+preg_match_all('/(http\:.*?.mp3)/is', $content, $matches);
+
+$mp3_urls = array();
+
+foreach ($matches as $match) {
+	$mp3_urls[] = $match[1];
+}
+
+$mp3_urls = array_unique($mp3_urls);
+
+foreach ($mp3_urls as $key => $url) {
+	$url = str_replace('\/', '/', $url);
+	$mp3_urls[$key] = $url;
+
+	echo 'Downloading '.$url." ...\n";
+	$info = pathinfo($url);
+	_curl($url, $info['basename']);
+}
